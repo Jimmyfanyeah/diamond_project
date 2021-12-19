@@ -1,4 +1,4 @@
-# One-class segmentation update 2021/10/18
+# One-class segmentation
 
 ## Description
 This branch is for one class segmentation. All types of inclusions and reflections are considered as one class. The aim is to find out all regions.  

@@ -1,4 +1,4 @@
-name: chow-unet
+name: diamond_project
 channels:
   - pytorch
   - conda-forge
@@ -170,6 +170,8 @@ dependencies:
     - bleach==3.2.1
     - defusedxml==0.6.0
     - entrypoints==0.3
+    - future==0.18.2
+    - inplace-abn==1.1.0
     - ipywidgets==7.6.2
     - jinja2==2.11.2
     - jsonschema==3.2.0
@@ -194,7 +196,8 @@ dependencies:
     - tensorwatch==0.9.1
     - terminado==0.9.1
     - testpath==0.4.4
+    - torch-lr-finder==0.2.1
+    - tqdm==4.60.0
     - webencodings==0.5.1
     - widgetsnbextension==3.5.1
-prefix: /home/lingjia/anaconda3/envs/chow-unet
-
+prefix: /home/lingjia/anaconda3/envs/diamond_project

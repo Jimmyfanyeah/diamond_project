@@ -1,27 +1,9 @@
 import os
 from shutil import copy2,rmtree
-from generate_mask_image import genMaskImage
-from PIL import Image
-import torchvision.transforms.functional as TTF
-import torch
-from generate_clipped_img import handle_image as clip_image
-from clip_and_resize import handle_image
-
-def gather(baseDir,saveDir,tarExtensions=['xml','png']):
-    copyInfo = dict()
-    for key in tarExtensions:
-        copyInfo[key] = 0
-
-    os.makedirs(saveDir,exist_ok=True)
-    for root,_dirs,files in os.walk(baseDir):
-        if 'test' not in root.lower():
-            for file in files:
-                if 'mask' not in file and file.split('.')[-1] in tarExtensions:
-                    copy2(os.path.join(root,file),saveDir)
-                    copyInfo[file.split('.')[-1]] += 1
-
-    print('Copy finished!')
-    print(copyInfo)
+from gen_mask_image import genMaskImage
+from cut_and_resize import handle_image
+from clip_img import handle_image_v2 as clip_image
+import argparse
 
 def checkXML(filelist):
     status = None
@@ -31,100 +13,77 @@ def checkXML(filelist):
 
     return status
 
-def saveMask(root,files,saveDir):
-    os.makedirs(saveDir,exist_ok=True)
-    for f in files:
-        if f.split('.')[-1] == 'png':
-            if 'mask' in f:
-                label = TTF.to_tensor(Image.open(os.path.join(root,f))).sum(dim=0,keepdim=True)
-                label = label>0.0001
-                label = label.float()
-                label = torch.cat([label,]*3,dim=0)
-                label = TTF.to_pil_image(label)
-                label.save(os.path.join(saveDir,f[:11]+'-mask_v1.png'))
-            else:
-                copy2(os.path.join(root,f),os.path.join(saveDir,f[:11]+'.png'))
-
 
 if __name__=='__main__':
+
+    parser = argparse.ArgumentParser(description='Diamond Project')
+    parser.add_argument('--phase',          type=str,           default='other',        help='train or test')
+    opt = parser.parse_args()
+
+    # For train
     '''
-    saveDir: diamond images and labels, with no crust and resized to 1200*1200
+    baseDir: data path for original diamond images and videos
+    saveDir: copy diamond images from baseDir and generate corresponding image
     clippedDir: diamond images and labels, clipped into 400*400
     testDir: diamond images and labels, with no crust and resized to 1200*1200, intended for testing network
     '''
+    baseDir = '/media/hdd_4T/css_data/hdr_data_v2'
+    # baseDir = '/media/hdd_4T/css_data/hdr_data_v2/20191204 40 HDR images and videos (1 - 40)/20191023 (20p)'
+    labelDir = '/media/hdd_4T/css_data/1class/initial'
+    cutDir = '/media/hdd_4T/css_data/1class/cut'
+    clipDir = '/media/hdd_4T/css_data/1class/clip128'
 
-    baseDir = '/media/hdd/css_data/hdr_data'
-    labelDir = '/home/lingjia/Documents/CSS-PROJECT-DATA/UNET1/diamonds_labels'
-    saveDir = '/home/lingjia/Documents/CSS-PROJECT-DATA/UNET1/diamonds_labels_cutted'
-    clippedDir = '/home/lingjia/Documents/CSS-PROJECT-DATA/UNET1/diamonds_labels_clipped'
-    testDir = '/home/lingjia/Documents/CSS-PROJECT-DATA/UNET1/blind_test'
-
-    case = 'train' # test or train or frame.
-    if case == 'train':
+    if opt.phase == 'train':
         if os.path.exists(labelDir):
-            rmtree(labelDir)  # try to clean tmp folders
+            print('label exist!')
+            exit()
 
+        # Generate masks
+        print('STEP 1 Generate masks!')
         for root,dirs,files in os.walk(baseDir):
             status = checkXML(files)
             if status is not None:
                 genMaskImage(os.path.join(root,status),labelDir)
                 for f in files:
-                    if f.split('.')[-1] == 'png':
+                    if f.split('.')[-1] == 'png' and 'mask' not in f:
                         copy2(os.path.join(root,f),os.path.join(labelDir,f[:11]+'.png'))
-            else:
-                if 'test' not in root.lower():
-                    saveMask(root,files,labelDir)
 
-        # Delete crust (black borders) and resize diamonds to 1200*1200
+        # Delete crust (black borders) and resize diamonds to 1024*1024 (if applicable)
+        print('STEP 2 Delete crust!')
         imgList = [f for f in os.listdir(labelDir) if 'mask' not in f]
-        os.makedirs(saveDir,exist_ok=True)
+        os.makedirs(cutDir,exist_ok=True)
         for f in imgList:
-            handle_image(f,f[:11]+'-mask.png',labelDir,saveDir,tar_size=(1200,1200))
+            handle_image(f,f[:11]+'-mask.png',labelDir,cutDir,is_resize=False, tar_size=(1024,1024))
 
-        # For training, we clip the images into 400*400 patches
-        imgList = [f for f in os.listdir(saveDir) if 'mask' not in f and 'png' in f]
-        os.makedirs(clippedDir,exist_ok=True)
-        for f in imgList:
-            clip_image(f,f[:11]+'-mask.png',saveDir,clippedDir)
+        # For training, we clip the images into small size patchs
+        imgList = [f for f in os.listdir(cutDir) if 'mask' not in f and 'png' in f]
+        os.makedirs(clipDir,exist_ok=True)
+        for idx, f in enumerate(imgList):
+            clip_image(f,cutDir,clipDir,tar_size=(128,128),stride=64,is_center=True)
+            print(f'{idx}/{len(imgList)-1} {f[:11]} finish!')
 
-    elif case == 'test':
-        baseDir = '/home/lingjia/Documents/CSS_Project_1_1847/frame/1847test/1stframe'
-        tmpSaveDir = '/home/lingjia/Documents/CSS_Project_1_1847/frame/1847test/1stframe_labels'
-        testDir = '/home/lingjia/Documents/CSS_Project_1_1847/frame/1847test/1stframe_cutted'
-        try:
-            rmtree(tmpSaveDir)  # try to clean tmp folder
-        except:
-            pass
 
-        # generate black 'fake masks'
-        os.makedirs(tmpSaveDir,exist_ok=True)
-        for root,dirs,files in os.walk(baseDir):
-            saveMask(root,files,tmpSaveDir)
+    elif opt.phase == 'test':
+        # For test/infer
+        baseDir = '/media/hdd/css/frame001/white'
+        cutDir = '/media/hdd/css/frame001/white_cut'
 
-        # Delete crust (black borders) and resize diamonds to 1200*1200
-        imgList = [f for f in os.listdir(tmpSaveDir) if 'mask' not in f]
-        os.makedirs(testDir,exist_ok=True)
-        for f in imgList:
-            handle_image(f,f[:11]+'-mask.png',tmpSaveDir,testDir)
+        # Delete crust (black borders) and resize diamonds to 1024*1024 (optional)
+        imgList = [f for f in os.listdir(baseDir) if 'png' in f]
+        os.makedirs(cutDir,exist_ok=True)
+        for idx, f in enumerate(imgList):
+            handle_image(f,f.split('.')[0]+'-mask.png',baseDir,cutDir,is_resize=False, tar_size=(1024,1024))
 
-        image_dirs = os.listdir(testDir)
-        # generate txt files
-        with open(os.path.join(testDir,'id.txt'),'w') as file:
-            for image_idx in image_dirs:
-                if 'mask' not in image_idx and 'png' in image_idx:
-                    file.write(image_idx)
-                    file.write('\n')
-
+        # Generate txt files
+        imgList = os.listdir(cutDir)
+        imgList.sort()
+        with open(os.path.join(cutDir,'id.txt'),'w') as file:
+            for f in imgList:
+                if 'mask' not in f and 'png' in f:
+                    file.write(f+'\n')
 
     else:
-        baseDir = '/home/lingjia/Documents/tmp/921_B/frame'
-        testDir = '/home/lingjia/Documents/tmp/921_B/cutted'
-
-        # Delete crust (black borders) and resize diamonds to 1200*1200
-        imgList = [f for f in os.listdir(baseDir) if 'png' in f]
-        os.makedirs(testDir,exist_ok=True)
-        for f in imgList:
-            handle_image_v2(f,f.split('.')[0]+'-mask.png',baseDir,testDir)
+        print(f'No such process as {opt.phase}!')
 
 
 

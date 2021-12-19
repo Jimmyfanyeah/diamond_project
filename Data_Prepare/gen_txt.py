@@ -1,10 +1,9 @@
-import os
-import random
-from math import ceil
+
 
 # 1 = generate id.txt for 1 folder randomly
 # 2 = generate id.txt, id_val.txt, id_test.txt for cutted and clipped folder
-case = '1'
+case = '2'
+
 if case == '1':
     src_folder = '/home/lingjia/Documents/CSS-PROJECT-DATA/20210405_Needle/diamonds_labels'
     save_folder = '/home/lingjia/Documents/CSS-PROJECT-DATA/20210405_Needle'
@@ -20,92 +19,89 @@ if case == '1':
 elif case == '2':
     # all patches of 1 image in same phase, train or validation
     # save txt file for both cutted and clipped folder
-
     seed = 10
     n_fold = 10
     val_fold = 1
-    test_fold = 3
+    test_fold = 5
 
-    base_folder = '/home/lingjia/Documents/Diamond_Project_Data/UNET1'
-    cut_folder = os.path.join(base_folder,'diamonds_labels_cutted')
-    clip_folder = os.path.join(base_folder,'diamonds_labels_clipped')
+    base_folder = '/home/lingjia/Documents/diamond_data/1class'
+    cut_folder = os.path.join(base_folder,'cut')
+    clip_folder = os.path.join(base_folder,'clip')
 
+    special_case = []
     # special_cases = ['10353219437','10371944258']
-    special_cases = []
+    test_special = []
+    # with open('/home/lingjia/Documents/chow/unet/Data_Prepare/ids_fp.txt','r') as file:
+    #     for line in file:
+    #         special_case.append(line[:11])
+    # with open('/home/lingjia/Documents/diamond/unet/Data_Prepare/ids_large_regions.txt','r') as file:
+    #     for line in file:
+    #         special_case.append(line[:11])
+    # with open('/home/lingjia/Documents/chow/unet/Data_Prepare/ids_twinning_wisp.txt','r') as file:
+    #     for line in file:
+    #         special_case.append(line[:11])
+    # with open('/home/lingjia/Documents/chow/unet/Data_Prepare/special_cases_IG.txt','r') as file:
+    #     for line in file:
+    #         special_case.append(line[:11])
 
-    allcase = []
-    image_dirs = [name for name in os.listdir(cut_folder) if not 'mask' in name and 'png' in name]
-    for idx in image_dirs:
-        if idx[:11] in special_cases:
-            print('special '+idx[:11])
-        elif idx[:11] in allcase:
-            print('existed '+idx[:11])
-        else:
-            allcase.append(idx[:11])
+    print('num of special case: {}'.format(len(special_case)))
 
-    n_case = len(allcase)
-    allcase.sort()
-    random.seed(seed)
-    random.shuffle(allcase)
+    imgList = list(set([name[:11] for name in os.listdir(cut_folder) if not 'mask' in name and 'png' in name]))
+    n_case = len(imgList)
     step = ceil(n_case/n_fold) #ceil(4.1)=5
-    val_case = allcase[(val_fold-1)*step :min(val_fold*step, n_case)]
-    test_case = allcase[(test_fold-1)*step :min(test_fold*step, n_case)]
-    print('num of all:{}, validation: {}, test: {}'.format(n_case, len(val_case), len(test_case)))
 
-    val_special = []
-    test_special = special_cases
+    all_case = list(set(imgList).difference(set(special_case)))
+    all_case.sort()
+    random.seed(seed)
+    random.shuffle(all_case)
+
+    val_case = all_case[(val_fold-1)*step :min(val_fold*step, n_case)]
+    test_case = all_case[(test_fold-1)*step :min(test_fold*step, n_case)]
+    print('num of all:{}, val: {}, test: {}'.format(n_case-len(val_case)-len(test_case), len(val_case), len(test_case)))
 
     # generate txt files for cutted folder
-    val_sum = 0
-    all_sum = 0
-    test_sum = 0
-    image_dirs = [name for name in os.listdir(cut_folder) if not 'mask' in name and 'png' in name]
-    with_labels_file = open(os.path.join(cut_folder,'id_all.txt'),'w')
-    id_validation_file = open(os.path.join(cut_folder,'id_val.txt'),'w')
+    imgList = [name for name in os.listdir(cut_folder) if not 'mask' in name and 'png' in name]
+    id_train_file = open(os.path.join(cut_folder,'id_train.txt'),'w')
+    id_val_file = open(os.path.join(cut_folder,'id_val.txt'),'w')
     id_test_file = open(os.path.join(cut_folder,'id_test.txt'),'w')
-    for image_idx in image_dirs:
+    for image_idx in imgList:
         if image_idx[:11] in test_case or image_idx[:11] in test_special:
             id_test_file.write(image_idx)
             id_test_file.write('\n')
-            test_sum = test_sum + 1
+        elif image_idx[:11] in val_case:
+            id_val_file.write(image_idx)
+            id_val_file.write('\n')
         else:
-            with_labels_file.write(image_idx)
-            with_labels_file.write('\n')
-            all_sum = all_sum + 1
-            if image_idx[:11] in val_case or image_idx[:11] in val_special:
-                id_validation_file.write(image_idx)
-                id_validation_file.write('\n')
-                val_sum = val_sum + 1
+            id_train_file.write(image_idx)
+            id_train_file.write('\n')
 
-    with_labels_file.close()
-    id_validation_file.close()
+    id_train_file.close()
+    id_val_file.close()
     id_test_file.close()
 
     ## generate txt files for clip folder
-    image_dirs = [name for name in os.listdir(clip_folder) if not 'mask' in name and 'png' in name]
-    with_labels_file = open(os.path.join(clip_folder,'id_all.txt'),'w')
-    id_validation_file = open(os.path.join(clip_folder,'id_val.txt'),'w')
+    sum_train, sum_val, sum_test = 0,0,0
+    imgList = [name for name in os.listdir(clip_folder) if not 'mask' in name and 'png' in name]
+    id_train_file = open(os.path.join(clip_folder,'id_train.txt'),'w')
+    id_val_file = open(os.path.join(clip_folder,'id_val.txt'),'w')
     id_test_file = open(os.path.join(clip_folder,'id_test.txt'),'w')
 
-    test_sum = 0
-    val_sum = 0
-    all_sum = 0
-    for image_idx in image_dirs:
+    for image_idx in imgList:
         if image_idx[:11] in test_case or image_idx[:11] in test_special:
             id_test_file.write(image_idx)
             id_test_file.write('\n')
-            test_sum = test_sum+1
+            sum_test = sum_test+1
+        elif image_idx[:11] in val_case:
+            id_val_file.write(image_idx)
+            id_val_file.write('\n')
+            sum_val = sum_val+1
         else:
-            with_labels_file.write(image_idx)
-            with_labels_file.write('\n')
-            all_sum = all_sum+1
-            if image_idx[:11] in val_case or image_idx[:11] in val_special:
-                id_validation_file.write(image_idx)
-                id_validation_file.write('\n')
-                val_sum = val_sum + 1
+            id_train_file.write(image_idx)
+            id_train_file.write('\n')
+            sum_train = sum_train+1
 
-    with_labels_file.close()
-    id_validation_file.close()
+    id_train_file.close()
+    id_val_file.close()
     id_test_file.close()
 
-    print('clip folder, num of all:{}, val:{}, test:{}'.format(all_sum,val_sum,test_sum))
+    print('for small patch, num of train:{}, val:{}, test:{}'.format(sum_train,sum_val,sum_test))

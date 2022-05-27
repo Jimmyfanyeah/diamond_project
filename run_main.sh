@@ -1,7 +1,7 @@
 set -x
 nohup python3 main.py  \
                     --arch='efficientnet-b0'  \
-                    --num_cls=2  \
+                    --num_cls=1  \
                     --gpu='0,1'  \
                     --image_size=128 \
                     --batch-size=64  \

@@ -3,12 +3,13 @@ import sys
 import csv
 from PIL import Image
 from collections import OrderedDict
+# from sklearn.preprocessing import label_binarize
 import torch
 from torchvision import transforms
 
-module_path = os.path.abspath(os.path.join('/home/lingjia/Documents/diamond/EfficientNet'))
-if module_path not in sys.path:
-    sys.path.append(module_path)
+# module_path = os.path.abspath(os.path.join('/home/lingjia/Documents/diamond/EfficientNet'))
+# if module_path not in sys.path:
+#     sys.path.append(module_path)
 from efficientnet_pytorch import EfficientNet
 
 
@@ -16,13 +17,14 @@ if __name__ == '__main__':
 
     # class_list = {'Pinpoint': 1, 'Crystal': 2, 'Needle': 3, 'Feather': 4, 'Internal_graining': 5,
     #                        'Cloud': 6, 'Twinning_wisp': 7, 'Nick': 8, 'Pit': 9, 'Burn_mark': 10}
-    class_list = {'Pinpoint': 1, 'Crystal': 2, 'Needle': 3, 'Feather': 4}
+    class_list = {'Cloud': 1, 'Crystal': 2, 'Feather': 3, 'Twinning_wisp': 4}
 
-    oao_groups = {'1':['Cloud','Crystal'], '2':['Cloud','Twinning_wisp'], '3':['Cloud','Feather'], 
-            '4':['Crystal','Twinning_wisp'], '5':['Crystal','Feather'], '6':['Feather','Twinning_wisp']}
+    oao_groups = {'1':['Cloud','Crystal'], '2':['Cloud','Feather'], '3':['Cloud','Twinning_wisp'],  
+            '4':['Crystal','Feather'], '5':['Crystal','Twinning_wisp'],  '6':['Feather','Twinning_wisp']}
 
     # Choose model
-    labels_map = oao_groups['5']
+    os.environ["CUDA_VISIBLE_DEVICES"]="2"
+    labels_map = oao_groups['6']
     print(f'Infer based on OAO model {labels_map[0]}_{labels_map[1]}')
 
     # Load checkpoint
@@ -30,7 +32,7 @@ if __name__ == '__main__':
     image_size = EfficientNet.get_image_size(model_name) # 224
     model = EfficientNet.from_name(model_name, num_classes=2)
 
-    model_path = '/home/lingjia/Documents/diamond_result/cls_multi-class_EfficientNet'
+    model_path = '/media/hdd/diamond_result/cls_multi-class_EfficientNet/oao_strategy'
     checkpoint_path = os.path.join(model_path,f'{labels_map[0]}_{labels_map[1]}','model_best.pth')
     # checkpoint = torch.load(checkpoint_path)
     # model.load_state_dict(checkpoint['state_dict'])
@@ -46,19 +48,31 @@ if __name__ == '__main__':
 
 
     # Infer set
+    phase = 'test'
     testList = {}
     data_path = '/media/hdd/diamond_data/cls_multi-class_EfficientNet'
-    for cls_name in class_list.keys():
-        if not cls_name.lower() == 'pinpoint':
-            with open(os.path.join(data_path,cls_name,'test_ids.txt'), 'r') as file:
+    if phase == 'test':
+        for cls_name in class_list.keys():
+            print(f'{cls_name}')
+            with open(os.path.join(data_path,cls_name,f'test_ids.txt'), 'r') as file:
                 tmpList = file.readlines()
             tmpList = [n.split('\n')[0] for n in tmpList]
             for tmp in tmpList:
                 testList[tmp] = [tmp,class_list[cls_name],cls_name]
-
+    elif phase == 'train':
+        for cls_name in labels_map:
+            print(f'{cls_name}')
+            with open(os.path.join(data_path,cls_name,f'train_ids.txt'), 'r') as file:
+                tmpList = file.readlines()
+            tmpList = [n.split('\n')[0] for n in tmpList]
+            for tmp in tmpList:
+                testList[tmp] = [tmp,class_list[cls_name],cls_name]
+    print(len(testList))
 
     infer_info = [['img_name','cls_name','cls_id',f'prob_{labels_map[0]}',f'prob_{labels_map[1]}']]
-    for img_n in testList.keys():
+    output_last_layer = [['img_name','cls_name','cls_id',f'output_{labels_map[0]}',f'output_{labels_map[1]}']]
+    num_idx = len(testList.keys())
+    for idx, img_n in enumerate(testList.keys()):
 
         # Open image
         cls_name = testList[img_n][2]
@@ -78,14 +92,23 @@ if __name__ == '__main__':
  
         probs = torch.softmax(logits, dim=1)
         tmp_info = [img_n,cls_name,class_list[cls_name],probs[0,0].item(),probs[0,1].item()]
-        print(f'{img_n} GT:{cls_name} Pred:{probs}')
-
         infer_info.append(tmp_info)
 
+        print(f'{idx}/{num_idx} {img_n} GT:{cls_name} Pred:{probs}')
 
-    save_path = '/media/hdd/diamond_infer/cls_multi-class_EfficientNet'
+        tmp_output_last_layer = [img_n,cls_name,class_list[cls_name],logits[0,0].item(),logits[0,1].item()]
+        output_last_layer.append(tmp_output_last_layer)
+
+
+    save_path = '/media/hdd/diamond_infer/cls_multi-class_EfficientNet_0420'
     os.makedirs(save_path,exist_ok=True)
-    infer_info_file = os.path.join(save_path,f'infer_on_{labels_map[0]}_{labels_map[1]}.csv')
+
+    infer_info_file = os.path.join(save_path,f'infer_{phase}_on_{labels_map[0]}_{labels_map[1]}.csv')
     with open(infer_info_file, 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerows(infer_info)
+
+    infer_info_file = os.path.join(save_path,f'infer_{phase}_on_{labels_map[0]}_{labels_map[1]}_output_last_layer.csv')
+    with open(infer_info_file, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(output_last_layer)

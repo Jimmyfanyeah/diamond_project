@@ -1,0 +1,103 @@
+import os
+from shutil import copy2,rmtree
+from gen_mask_image import genMaskImage
+from cut_and_resize import handle_image
+from clip_img import handle_image_v2 as clip_image
+import argparse
+
+def checkXML(filelist):
+    status = None
+    for f in filelist:
+        if f.split('.')[-1] == 'xml':
+            status = f
+
+    return status
+
+
+if __name__=='__main__':
+
+    parser = argparse.ArgumentParser(description='Diamond Project')
+    parser.add_argument('--phase', type=str, default='other', help='train or test')
+    opt = parser.parse_args()
+
+    # For train
+    '''
+    baseDir: data path for original diamond images and videos
+    saveDir: copy diamond images from baseDir and generate corresponding image
+    clippedDir: diamond images and labels, clipped into 400*400
+    testDir: diamond images and labels, with no crust and resized to 1200*1200, intended for testing network
+    '''
+    baseDir = '/media/hdd/diamond_data/hdr_data_v2'
+    # baseDir = '/media/hdd_4T/css_data/hdr_data_v2/20191204 40 HDR images and videos (1 - 40)/20191023 (20p)'
+    labelDir = '/media/hdd/diamond_data/UNet_seg_1class/initial'
+    cutDir = '/media/hdd/diamond_data/UNet_seg_1class/cut'
+    clipDir = '/media/hdd/diamond_data/UNet_seg_1class/clip256'
+
+    if opt.phase == 'train':
+        if os.path.exists(labelDir):
+            print('label exist!')
+            # exit()
+
+        # Generate masks
+        # imgList_exist = [f[:11] for f in os.listdir(labelDir) if 'png' in f and not 'mask' in f]
+        print('STEP 1 Generate masks!')
+        for root,dirs,files in os.walk(baseDir):
+            status = checkXML(files)
+            if status is not None:
+                genMaskImage(os.path.join(root,status),labelDir)
+            # fileids = [f[:11] for f in files]
+            # files = [n for n in files if n[:11] in list(set(fileids).difference(imgList_exist)) and 'png' in n and not 'mask' in n]
+            # if len(files)>0:
+            #     print(f'{root} {len(files)}')
+            files = [n for n in files if 'png' in n and not 'mask' in n]
+            for f in files:
+                copy2(os.path.join(root,f),os.path.join(labelDir,f[:11]+'.png'))
+
+        # Delete crust (black borders) and resize diamonds to 1024*1024 (if applicable)
+        print('STEP 2 Delete crust!')
+        imgList = [f for f in os.listdir(labelDir) if 'mask' not in f]
+        # imgList_exist = list(set([f[:11] for f in os.listdir(cutDir) if 'mask' not in f]))
+        # imgList = list(set(imgList).difference(imgList_exist))
+        print(len(imgList))
+        os.makedirs(cutDir,exist_ok=True)
+        for f in imgList:
+            handle_image(f,f[:11]+'-mask.png',labelDir,cutDir,is_resize=False, tar_size=(1024,1024))
+
+        # For training, we clip the images into small size patchs
+        print('STEP 3 Clip to small patch')
+        imgList = [f for f in os.listdir(cutDir) if 'mask' not in f and 'png' in f]
+        # imgList_exist = list(set([f[:11] for f in os.listdir(clipDir) if 'mask' not in f]))
+        # imgList = list(set(imgList).difference(imgList_exist))
+        print(len(imgList))
+
+        os.makedirs(clipDir,exist_ok=True)
+        for idx, f in enumerate(imgList):
+            clip_image(f,cutDir,clipDir,tar_size=(256,256),is_center=True)
+            print(f'{idx}/{len(imgList)-1} {f[:11]} finish!')
+
+
+    elif opt.phase == 'test':
+        # For test/infer
+        baseDir = '/media/hdd/css/frame001/white'
+        cutDir = '/media/hdd/css/frame001/white_cut'
+
+        # Delete crust (black borders) and resize diamonds to 1024*1024 (optional)
+        imgList = [f for f in os.listdir(baseDir) if 'png' in f]
+        os.makedirs(cutDir,exist_ok=True)
+        for idx, f in enumerate(imgList):
+            handle_image(f,f.split('.')[0]+'-mask.png',baseDir,cutDir,is_resize=False, tar_size=(1024,1024))
+
+        # Generate txt files
+        imgList = os.listdir(cutDir)
+        imgList.sort()
+        with open(os.path.join(cutDir,'id.txt'),'w') as file:
+            for f in imgList:
+                if 'mask' not in f and 'png' in f:
+                    file.write(f+'\n')
+
+    else:
+        print(f'No such process as {opt.phase}!')
+
+
+
+
